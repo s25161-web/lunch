@@ -4,9 +4,9 @@ import datetime
 import calendar
 import re
 
-st.set_page_config(page_title="월간 학교 급식 달력 & 다이어트 식단", page_icon="📅", layout="wide")
-st.title("📅 우리 학교 월간 급식 달력 (다이어트 모드)")
-st.caption("선택한 월의 급식 메뉴를 확인하고, 다이어트 중인 학생들을 위한 맞춤 정보를 확인합니다.")
+st.set_page_config(page_title="월간 학교 급식 달력 (다이어트 모드)", page_icon="🥗", layout="wide")
+st.title("🥗 우리 학교 월간 급식 달력 (다이어트 추천 모드)")
+st.caption("선택한 월의 급식 메뉴 중 다이어트에 도움되는 저칼로리/고단백 메뉴를 강조해 보여드립니다.")
 
 ALLERGY_MAP = {
     1: "난류", 2: "우유", 3: "메밀", 4: "땅콩", 5: "대두",
@@ -15,8 +15,8 @@ ALLERGY_MAP = {
     16: "쇠고기", 17: "오징어", 18: "조개류(굴/전복/홍합 포함)", 19: "잣",
 }
 
-# 다이어트 추천 핵심 식재료 키워드 (닭가슴살, 샐러드, 두부, 단백질 등)
-DIET_KEYWORDS = ["닭가슴살", "샐러드", "단호박", "고구마", "두부", "방울토마토", "생선", "연어", "오트밀", "콩", "닭안심", "우유", "바나나"]
+# 다이어트 추천 키워드 (해당 단어가 포함된 메뉴는 강조 표시)
+DIET_KEYWORDS = ["샐러드", "닭가슴살", "두부", "채소", "과일", "삶은", "구운", "곤약", "귀리", "현미", "브로콜리", "단호박", "고구마", "우유", "방울토마토"]
 
 def replace_allergy_codes(dish_text, convert_to_text=True):
     """메뉴명 뒤의 알레르기 번호를 감지하여 한글 식재료명으로 치환합니다."""
@@ -39,14 +39,14 @@ office_code = st.sidebar.text_input("시도교육청코드", value="T10", help="
 school_code = st.sidebar.text_input("표준학교코드", value="9290088", help="기본값: 제주중앙고등학교(9290088)")
 
 st.sidebar.markdown("---")
-st.sidebar.subheader("🥗 다이어트 & 알레르기 설정")
-diet_mode = st.sidebar.toggle(
-    "🔥 다이어트 모드 (저칼로리/고단백 강조)", value=True,
-    help="체크 시 칼로리 정보가 표시되고, 다이어트 추천 식재료가 강조됩니다."
-)
+st.sidebar.subheader("🍴 옵션 설정")
 show_allergen_names = st.sidebar.toggle(
     "알레르기 식품명으로 변환", value=True,
     help="체크 시 숫자(예: 1. 5.) 대신 [난류, 대두] 형태로 변환하여 표시합니다.",
+)
+highlight_diet = st.sidebar.toggle(
+    "🥗 다이어트 추천 메뉴 강조", value=True,
+    help="샐러드, 닭가슴살, 두부 등 다이어트에 유용한 메뉴에 하이라이트를 적용합니다.",
 )
 
 with st.sidebar.expander("📖 나이스 알레르기 번호 안내표"):
@@ -90,21 +90,17 @@ try:
         res_data = fetch_monthly_meals(neis_key, office_code, school_code, year, month)
 
     meal_dict = {}
-    if "mealServiceDietInfo" in res_data:
+    if isinstance(res_data, dict) and "mealServiceDietInfo" in res_data:
         rows = res_data["mealServiceDietInfo"][1]["row"]
         for row in rows:
             ymd = row.get("MLSV_YMD")
             meal_type = row.get("MMEAL_SC_NM", "급식")
             dish = row.get("DDISH_NM", "")
-            cal = row.get("CAL_INFO", "")  # 칼로리 정보 (예: "782.5 Kcal")
 
             formatted_dish = replace_allergy_codes(dish, convert_to_text=show_allergen_names)
             dish_lines = [d.strip() for d in formatted_dish.replace("<br/>", "\n").split("\n") if d.strip()]
 
-            meal_dict.setdefault(ymd, {})[meal_type] = {
-                "dishes": dish_lines,
-                "cal": cal
-            }
+            meal_dict.setdefault(ymd, {})[meal_type] = dish_lines
 
     month_cal = calendar.monthcalendar(year, month)
     weekdays_kr = ["월", "화", "수", "목", "금"]
@@ -139,41 +135,36 @@ try:
                         else:
                             displayed_count = 0
 
-                            # 공통 렌더링 함수
-                            def render_meal_section(m_label, m_data, color_tag):
-                                nonlocal displayed_count
+                            if meal_filter in ["전체 보기", "중식만 보기"] and "중식" in day_meals:
                                 displayed_count += 1
-                                st.markdown(f":{color_tag}[**{m_label}**]")
-                                
-                                if diet_mode and m_data["cal"]:
-                                    st.caption(f"🔥 총 칼로리: {m_data['cal']}")
-
-                                for dish in m_data["dishes"]:
-                                    # 다이어트 모드일 때 키워드가 포함된 메뉴는 특별히 강조 표시
-                                    highlighted = False
-                                    if diet_mode:
-                                        for kw in DIET_KEYWORDS:
-                                            if kw in dish:
-                                                highlighted = True
-                                                break
-                                    
-                                    if highlighted:
-                                        st.markdown(f"<span style='font-size:0.85rem;'>• 🌟 **{dish}**</span>", unsafe_allow_html=True)
+                                st.markdown(":blue[**🥣 중식**]")
+                                for dish in day_meals["중식"]:
+                                    if highlight_diet and any(kw in dish for kw in DIET_KEYWORDS):
+                                        st.markdown(f"<span style='font-size:0.85rem;'>• 🌟 <b>{dish}</b></span>", unsafe_allow_html=True)
                                     else:
                                         st.markdown(f"<span style='font-size:0.85rem;'>• {dish}</span>", unsafe_allow_html=True)
 
-                            if meal_filter in ["전체 보기", "중식만 보기"] and "중식" in day_meals:
-                                render_meal_section("중식", day_meals["중식"], "blue")
-
                             if meal_filter in ["전체 보기", "석식만 보기"] and "석식" in day_meals:
+                                displayed_count += 1
                                 if meal_filter == "전체 보기" and "중식" in day_meals:
                                     st.write("")
-                                render_meal_section("석식", day_meals["석식"], "red")
+                                st.markdown(":red[**🌙 석식**]")
+                                for dish in day_meals["석식"]:
+                                    if highlight_diet and any(kw in dish for kw in DIET_KEYWORDS):
+                                        st.markdown(f"<span style='font-size:0.85rem;'>• 🌟 <b>{dish}</b></span>", unsafe_allow_html=True)
+                                    else:
+                                        st.markdown(f"<span style='font-size:0.85rem;'>• {dish}</span>", unsafe_allow_html=True)
 
                             if meal_filter == "전체 보기":
-                                for m_type, m_data in day_meals.items():
+                                for m_type, dishes in day_meals.items():
                                     if m_type not in ["중식", "석식"]:
-                                        render_meal_section(m_type, m_data, "green")
+                                        displayed_count += 1
+                                        st.markdown(f":green[**🍽️ {m_type}**]")
+                                        for dish in dishes:
+                                            if highlight_diet and any(kw in dish for kw in DIET_KEYWORDS):
+                                                st.markdown(f"<span style='font-size:0.85rem;'>• 🌟 <b>{dish}</b></span>", unsafe_allow_html=True)
+                                            else:
+                                                st.markdown(f"<span style='font-size:0.85rem;'>• {dish}</span>", unsafe_allow_html=True)
 
                             if displayed_count == 0:
                                 st.caption("해당 식단 없음")
